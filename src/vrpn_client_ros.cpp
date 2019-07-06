@@ -116,15 +116,6 @@ namespace vrpn_client_ros
     nh.param<bool>("process_sensor_id", process_sensor_id_, false);
     nh.param<std::string>("sync_file", sync_file_, "");
 
-    if (!sync_file_.empty()) {
-      sync_stream_.open(sync_file_);
-      if (sync_stream_.is_open()) {
-        ROS_INFO("Will save server/client time stamp pairs to %s", sync_file_.c_str());
-        sync_stream_ << "#seq  server_time  client_time  diff(ns)  min_diff" << std::endl;
-      } else {
-        ROS_WARN("Cannot write to %s", sync_file_.c_str());
-      }
-    }
     pose_msg_.header.frame_id = twist_msg_.header.frame_id = accel_msg_.header.frame_id = transform_stamped_.header.frame_id = frame_id;
     pose_msg_.header.seq = 0;
 
@@ -143,11 +134,44 @@ namespace vrpn_client_ros
     tracker_remote_->unregister_change_handler(this, &VrpnTrackerRos::handle_pose);
     tracker_remote_->unregister_change_handler(this, &VrpnTrackerRos::handle_twist);
     tracker_remote_->unregister_change_handler(this, &VrpnTrackerRos::handle_accel);
+    if (!sync_file_.empty()) {
+      std::ofstream sync_stream(sync_file_);
+      if (sync_stream.is_open()) {
+        ROS_INFO("Will save server/client time stamp pairs to %s", sync_file_.c_str());
+        sync_stream << "#seq  server_time  client_time  diff(ns)  min_diff" << std::endl;
+        int64_t min_diff = std::numeric_limits<int64_t>::max();
+        assert(server_times_.size() == client_times_.size());
+        for (size_t i = 0; i < server_times_.size(); ++i) {
+          const auto &server_time = server_times_[i];
+          const auto &client_time = client_times_[i];
+          int64_t diff = (int64_t)client_time.toNSec() - (int64_t)server_time.toNSec();
+          if (diff < min_diff) min_diff = diff;
+          sync_stream <<
+            seqs_[i] << "  " <<
+            server_time.toSec() << "  " <<
+            client_time.toSec() << "  " <<
+            diff << "  " <<
+            min_diff <<
+            std::endl;
+        }
+      } else {
+        ROS_WARN("Cannot write to %s", sync_file_.c_str());
+      }
+    }
+    ROS_INFO_STREAM("Saving stamps to " << sync_file_);
   }
 
   void VrpnTrackerRos::mainloop()
   {
     tracker_remote_->mainloop();
+  }
+
+  void VrpnTrackerRos::recordTime(uint64_t seq, ros::Time server_time, ros::Time client_time)
+  {
+    std::lock_guard<std::mutex> guard(times_mutex_);
+    server_times_.push_back(server_time);
+    client_times_.push_back(client_time);
+    seqs_.push_back(seq);
   }
 
   void VRPN_CALLBACK VrpnTrackerRos::handle_pose(void *userData, const vrpn_TRACKERCB tracker_pose)
@@ -180,18 +204,7 @@ namespace vrpn_client_ros
     {
       ros::Time server_time(tracker_pose.msg_time.tv_sec, tracker_pose.msg_time.tv_usec * 1000);
       tracker->pose_msg_.header.stamp = tracker->use_server_time_ ? server_time : client_time;
-      if (tracker->sync_stream_.is_open()) {
-        static int64_t min_diff = std::numeric_limits<int64_t>::max();
-        int64_t diff = (int64_t)client_time.toNSec() - (int64_t)server_time.toNSec();
-        if (diff < min_diff) min_diff = diff;
-        tracker->sync_stream_ <<
-          tracker->pose_msg_.header.seq << "  " <<
-          tracker->pose_msg_.header.stamp.toSec() << "  " <<
-          client_time.toSec() << "  " <<
-          diff << "  " <<
-          min_diff <<
-          std::endl;
-      }
+      tracker->recordTime(tracker->pose_msg_.header.seq, server_time, client_time);
 
       tracker->pose_msg_.pose.position.x = tracker_pose.pos[0];
       tracker->pose_msg_.pose.position.y = tracker_pose.pos[1];

@@ -46,6 +46,7 @@
 #include <string>
 #include <unordered_map>
 #include <fstream>
+#include <mutex>
 
 namespace vrpn_client_ros
 {
@@ -84,7 +85,9 @@ namespace vrpn_client_ros
     bool use_server_time_, broadcast_tf_, process_sensor_id_;
     std::string tracker_name;
     std::string sync_file_;
-    std::ofstream sync_stream_;
+    std::vector<uint64_t> seqs_;
+    std::vector<ros::Time> server_times_, client_times_;
+    std::mutex times_mutex_;
 
     ros::Timer mainloop_timer;
 
@@ -94,6 +97,8 @@ namespace vrpn_client_ros
     geometry_msgs::TransformStamped transform_stamped_;
 
     void init(std::string tracker_name, ros::NodeHandle nh, bool create_mainloop_timer);
+
+    void recordTime(uint64_t seq, ros::Time server_time, ros::Time client_time);
 
     static void VRPN_CALLBACK handle_pose(void *userData, const vrpn_TRACKERCB tracker_pose);
 
