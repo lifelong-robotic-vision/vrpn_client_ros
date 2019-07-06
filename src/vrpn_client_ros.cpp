@@ -137,10 +137,10 @@ namespace vrpn_client_ros
     if (!sync_file_.empty()) {
       std::ofstream sync_stream(sync_file_);
       if (sync_stream.is_open()) {
-        ROS_INFO("Will save server/client time stamp pairs to %s", sync_file_.c_str());
+        ROS_INFO_STREAM("Saving server/client time stamp pairs to " << sync_file_);
         sync_stream << "#seq  server_time  client_time  diff(ns)  min_diff" << std::endl;
         int64_t min_diff = std::numeric_limits<int64_t>::max();
-        assert(server_times_.size() == client_times_.size());
+        assert(seqs_.size() == client_times_.size() && seqs_.size() == server_times_.size());
         for (size_t i = 0; i < server_times_.size(); ++i) {
           const auto &server_time = server_times_[i];
           const auto &client_time = client_times_[i];
@@ -158,7 +158,6 @@ namespace vrpn_client_ros
         ROS_WARN("Cannot write to %s", sync_file_.c_str());
       }
     }
-    ROS_INFO_STREAM("Saving stamps to " << sync_file_);
   }
 
   void VrpnTrackerRos::mainloop()
@@ -168,6 +167,7 @@ namespace vrpn_client_ros
 
   void VrpnTrackerRos::recordTime(uint64_t seq, ros::Time server_time, ros::Time client_time)
   {
+    if (sync_file_.empty()) return;
     std::lock_guard<std::mutex> guard(times_mutex_);
     server_times_.push_back(server_time);
     client_times_.push_back(client_time);
