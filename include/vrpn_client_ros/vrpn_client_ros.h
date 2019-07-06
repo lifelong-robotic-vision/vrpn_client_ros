@@ -45,6 +45,7 @@
 #include <map>
 #include <string>
 #include <unordered_map>
+#include <fstream>
 
 namespace vrpn_client_ros
 {
@@ -82,6 +83,8 @@ namespace vrpn_client_ros
     ros::NodeHandle output_nh_;
     bool use_server_time_, broadcast_tf_, process_sensor_id_;
     std::string tracker_name;
+    std::string sync_file_;
+    std::ofstream sync_stream_;
 
     ros::Timer mainloop_timer;
 
